@@ -1,5 +1,98 @@
-template-repository (1.0-1) unstable; urgency=medium
+python-reno (2.11.2-4) unstable; urgency=medium
 
-  * Initial release
+  [ Ondřej Nový ]
+  * Use debhelper-compat instead of debian/compat.
+  * Bump Standards-Version to 4.4.1.
 
- -- Tsic404 <liuheng@deepin.org>  Sat, 28 Jan 2023 13:46:49 +0800
+  [ Thomas Goirand ]
+  * Cleans better (Closes: #1047030).
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 18 Aug 2023 13:56:30 +0200
+
+python-reno (2.11.2-2) unstable; urgency=medium
+
+  * Uploading to unstable.
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 17 Jul 2019 00:17:41 +0200
+
+python-reno (2.11.2-1) experimental; urgency=medium
+
+  * New upstream release.
+  * Removed Python 2 support.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 26 Mar 2019 21:16:04 +0100
+
+python-reno (2.9.2-1) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Ondřej Nový ]
+  * d/control: Set Vcs-* to salsa.debian.org
+  * d/control: Add trailing tilde to min version depend to allow
+    backports
+  * d/control: Use team+openstack@tracker.debian.org as maintainer
+
+  [ David Rabel ]
+  * New upstream version 2.9.2
+
+ -- David Rabel <david.rabel@noresoft.com>  Mon, 03 Sep 2018 17:19:07 +0200
+
+python-reno (2.5.0-1) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * Bumped debhelper compat version to 10
+
+  [ Thomas Goirand ]
+  * Fixed VCS URLS.
+  * debian/copyright format using https.
+  * Running wrap-and-sort -bast.
+  * Updating maintainer field.
+  * Standards-Version is now 4.1.1.
+  * Fixed python3 shebang to use python3, not python3.x.
+  * New upstream release.
+  * Fixed (build-)depends for this release.
+  * Using pkgos-dh_auto_test and blacklisting test_build_cache_db().
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 05 Nov 2017 21:21:02 +0000
+
+python-reno (1.3.0-6) unstable; urgency=medium
+
+  * Realy added gnupg as build-depends (Closes: #834685).
+  * Using pkgos-dh_auto_install from openstack-pkg-tools >= 52~.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 13 Oct 2016 13:59:52 +0200
+
+python-reno (1.3.0-5) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * d/rules: Changed UPSTREAM_GIT protocol to https
+  * d/s/options: extend-diff-ignore of .gitreview
+  * d/control: Using OpenStack's Gerrit as VCS URLs.
+
+  [ Thomas Goirand ]
+  * Added gnupg as build-depends (Closes: #834685).
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 04 Oct 2016 14:30:48 +0200
+
+python-reno (1.3.0-3) unstable; urgency=medium
+
+  * Added git as runtime and build depends (Closes: #824593).
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 18 May 2016 10:23:32 +0200
+
+python-reno (1.3.0-2) unstable; urgency=medium
+
+  [ Thomas Goirand ]
+  * Use patch to use less entropy in unit tests.
+  * Reactivated unit tests.
+
+  [ Ondřej Nový ]
+  * Fixed VCS URLs (https).
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 29 Feb 2016 17:34:49 +0000
+
+python-reno (1.3.0-1) unstable; urgency=medium
+
+  * Initial release. (Closes: #811150)
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 17 Jan 2016 06:17:15 +0000
