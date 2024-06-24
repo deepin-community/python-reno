@@ -10,14 +10,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from __future__ import print_function
-
 import collections
 import fnmatch
 import logging
 import os.path
 import re
-import sys
 
 from dulwich import diff_tree
 from dulwich import index as d_index
@@ -88,6 +85,9 @@ def _changes_in_subdir(repo, walk_entry, subdir):
     """
     commit = walk_entry.commit
     store = repo.object_store
+
+    if os.path.sep == '\\':
+        subdir = subdir.replace('\\', '/')
 
     parents = walk_entry._get_parents(commit)
 
@@ -388,6 +388,7 @@ class RenoRepo(repo.Repo):
     # Populated by _load_tags().
     _all_tags = None
     _shas_to_tags = None
+    _tags_to_dates = None
 
     def _get_commit_from_tag(self, tag, tag_sha):
         """Return the commit referenced by the tag and when it was tagged."""
@@ -431,9 +432,11 @@ class RenoRepo(repo.Repo):
             if k.startswith(b'refs/tags/')
         }
         self._shas_to_tags = {}
+        self._tags_to_dates = {}
         for tag, tag_sha in self._all_tags.items():
             tagged_sha, date = self._get_commit_from_tag(tag, tag_sha)
             self._shas_to_tags.setdefault(tagged_sha, []).append((tag, date))
+            self._tags_to_dates[tag] = date
 
     def get_tags_on_commit(self, sha):
         "Return the tag(s) on a commit, in application order."
@@ -456,7 +459,7 @@ class RenoRepo(repo.Repo):
             tree = self[tree_sha]
             return tree
 
-    def get_file_at_commit(self, filename, sha):
+    def get_file_at_commit(self, filename, sha, encoding=None):
         """Return the contents of the file.
 
         If sha is None, return the working copy of the file. If the
@@ -470,7 +473,8 @@ class RenoRepo(repo.Repo):
         if sha is None:
             # Get the copy from the working directory.
             try:
-                with open(os.path.join(self.path, filename), 'r') as f:
+                with open(os.path.join(self.path, filename), 'r',
+                          encoding=encoding) as f:
                     return f.read()
             except IOError:
                 return None
@@ -484,6 +488,10 @@ class RenoRepo(repo.Repo):
         commit = self[sha]
         tree = self[commit.tree]
         try:
+            if os.path.sep == '\\':
+                # Dulwich doesn't handle Windows paths, we need to take care of
+                # it ourselves
+                filename = filename.replace('\\', '/')
             mode, blob_sha = tree.lookup_path(self.get_object,
                                               filename.encode('utf-8'))
         except KeyError:
@@ -518,10 +526,26 @@ class Scanner(object):
             self.conf.closed_branch_tag_re,
             flags=re.VERBOSE | re.UNICODE,
         )
+        self.branch_sort_prefix = self.conf.branch_sort_prefix
+        self.branch_sort_re = re.compile(
+            self.conf.branch_sort_re,
+            flags=re.VERBOSE | re.UNICODE,
+        )
         self._ignore_uids = set(
             _get_unique_id(fn)
             for fn in self.conf.ignore_notes
         )
+        self._encoding = conf.options['encoding']
+
+    def close(self):
+        """Close any files opened by this scanner."""
+        self._repo.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     def _get_ref(self, name):
         if name:
@@ -531,6 +555,9 @@ class Scanner(object):
                 'refs/tags/' + name,
                 # If a stable branch was removed, look for its EOL tag.
                 'refs/tags/' + (name.rpartition('/')[-1] + '-eol'),
+                # If a stable branch was moved to unmaintained, look
+                # for its EOM tag. EOL will have precedence if exists.
+                'refs/tags/' + (name.rpartition('/')[-1] + '-eom'),
                 # If someone is using the "short" name for a branch
                 # without a local tracking branch, look to see if the
                 # name exists on the 'origin' remote.
@@ -568,8 +595,18 @@ class Scanner(object):
         return self._repo.get_walker(branch_head)
 
     def _get_valid_tags_on_commit(self, sha):
-        return [tag for tag in self._repo.get_tags_on_commit(sha)
-                if self.release_tag_re.match(tag)]
+        """Return valid tags for a commit.
+
+        If multiple tags are available, the first tags are pre-release tags.
+        """
+        tags = (tag for tag in self._repo.get_tags_on_commit(sha)
+                if self.release_tag_re.match(tag))
+        # This makes sure that we order the list with pre_release_tag tags
+        # first: in case where multiple tags match a commit, the non-pre
+        # release tag will be last.
+        return sorted(
+            tags, key=lambda tag: not bool(self.pre_release_tag_re.search(tag))
+        )
 
     def _get_tags_on_branch(self, branch):
         "Return a list of tag names on the given branch."
@@ -642,7 +679,7 @@ class Scanner(object):
         # branch until we find something that is on both.
         master_commits = set(
             c.commit.sha().hexdigest()
-            for c in self._get_walker_for_branch('master')
+            for c in self._get_walker_for_branch(self.conf.default_branch)
         )
         for c in self._get_walker_for_branch(branch):
             if c.commit.sha().hexdigest() in master_commits:
@@ -652,13 +689,13 @@ class Scanner(object):
                     c.commit.sha().hexdigest().encode('ascii'))
                 if tags:
                     return tags[-1]
-                else:
-                    # Naughty, naughty, branching without tagging.
-                    LOG.info(
-                        ('There is no tag on commit %s at the base of %s. '
-                         'Branch scan short-cutting is disabled.'),
-                        c.commit.sha().hexdigest(), branch)
-                    return None
+
+        # Naughty, naughty, branching without tagging.
+        LOG.info(
+            'There is no tag on commit %s at the base of %s. '
+            'Branch scan short-cutting is disabled.',
+            c.commit.sha().hexdigest(), branch,
+        )
         return None
 
     def _topo_traversal(self, branch):
@@ -752,8 +789,8 @@ class Scanner(object):
                     # later, as long as we haven't already processed
                     # it.
                     first_parent = entry.commit.parents[0]
-                    if (first_parent not in todo and
-                            first_parent not in emitted):
+                    if (first_parent not in todo
+                            and first_parent not in emitted):
                         todo.appendleft(first_parent)
                     continue
 
@@ -804,13 +841,21 @@ class Scanner(object):
 
     def get_file_at_commit(self, filename, sha):
         "Return the contents of the file if it exists at the commit, or None."
-        return self._repo.get_file_at_commit(filename, sha)
+        return self._repo.get_file_at_commit(filename, sha,
+                                             encoding=self._encoding)
 
     def _file_exists_at_commit(self, filename, sha):
         "Return true if the file exists at the given commit."
-        return bool(self.get_file_at_commit(filename, sha))
+        return bool(self.get_file_at_commit(filename, sha,
+                                            encoding=self._encoding))
 
-    def _get_series_branches(self):
+    def _branch_sort_key(self, name):
+        match = self.branch_sort_re.search(name)
+        if match:
+            return self.branch_sort_prefix + match.group(1)
+        return name
+
+    def get_series_branches(self):
         "Get branches matching the branch_name_re config option."
         refs = self._repo.get_refs()
         LOG.debug('refs %s', list(refs.keys()))
@@ -836,7 +881,7 @@ class Scanner(object):
                 LOG.debug('closed branch tag %s becomes %s',
                           r.rpartition('/')[-1], name)
                 branch_names.add(name)
-        return list(sorted(branch_names))
+        return list(sorted(branch_names, key=self._branch_sort_key))
 
     def _get_earlier_branch(self, branch):
         "Return the name of the branch created before the given branch."
@@ -846,7 +891,7 @@ class Scanner(object):
         if branch.startswith('origin/'):
             branch = branch[7:]
         LOG.debug('looking for the branch before %s', branch)
-        branch_names = self._get_series_branches()
+        branch_names = self.get_series_branches()
         if branch not in branch_names:
             LOG.debug('Could not find branch %r among %s',
                       branch, branch_names)
@@ -890,7 +935,7 @@ class Scanner(object):
             # scan.
             return None
         # We need to look for the previous branch's root.
-        if branch and branch != 'master':
+        if branch and branch != self.conf.default_branch:
             previous_branch = self._get_earlier_branch(branch)
             if not previous_branch:
                 # This was the first branch, so scan the whole
@@ -910,7 +955,13 @@ class Scanner(object):
                 return candidate
         return None
 
-    def get_notes_by_version(self):
+    def get_version_dates(self):
+        "Return a dict mapping versions to dates."
+        if self._repo._tags_to_dates is not None:
+            return self._repo._tags_to_dates.copy()
+        return {}
+
+    def get_notes_by_version(self, branch=None):
         """Return an OrderedDict mapping versions to lists of notes files.
 
         The versions are presented in reverse chronological order.
@@ -918,13 +969,13 @@ class Scanner(object):
         Notes files are associated with the earliest version for which
         they were available, regardless of whether they changed later.
 
-        :param reporoot: Path to the root of the git repository.
-        :type reporoot: str
+        :param branch: The branch to scan. If not provided, using the branch
+            configured in ``self.conf``.
         """
 
         reporoot = self.reporoot
         notesdir = self.conf.notespath
-        branch = self.conf.branch
+        branch = branch or self.conf.branch
         earliest_version = self.conf.earliest_version
         collapse_pre_releases = self.conf.collapse_pre_releases
         stop_at_branch_base = self.conf.stop_at_branch_base
@@ -967,7 +1018,7 @@ class Scanner(object):
             # On the current branch, stop at the point where the most
             # recent branch was created, if we can find one.
             LOG.debug('working on current branch without earliest_version')
-            branches = self._get_series_branches()
+            branches = self.get_series_branches()
             if branches:
                 for earlier_branch in reversed(branches):
                     LOG.debug('checking if current branch is later than %s',
@@ -1011,8 +1062,17 @@ class Scanner(object):
             if not scan_stop_tag:
                 earliest_version = branch_base
             else:
-                idx = versions_by_date.index(scan_stop_tag)
-                earliest_version = versions_by_date[idx - 1]
+                try:
+                    idx = versions_by_date.index(scan_stop_tag)
+                except ValueError:
+                    LOG.debug(
+                        'could not find calculated scan stop point %s '
+                        'in history of %s, so using branch base %s instead',
+                        scan_stop_tag, branch, branch_base,
+                    )
+                    earliest_version = branch_base
+                else:
+                    earliest_version = versions_by_date[idx - 1]
                 LOG.debug('using version before %s as scan stop point',
                           scan_stop_tag)
             if earliest_version and collapse_pre_releases:
@@ -1167,7 +1227,6 @@ class Scanner(object):
                 msg = ('unable to find release notes file associated '
                        'with unique id %r, skipping') % uniqueid
                 LOG.debug(msg)
-                print(msg, file=sys.stderr)
 
         # Combine pre-releases into the final release, if we are told to
         # and the final release exists.

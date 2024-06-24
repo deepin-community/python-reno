@@ -12,8 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import mock
-import six
+from unittest import mock
 
 from reno.tests import base
 from reno import utils
@@ -28,7 +27,7 @@ class TestGetRandomString(base.TestCase):
         randrange.return_value = ord('a')
         actual = utils.get_random_string()
         expected = '61' * 8  # hex for ord('a')
-        self.assertIsInstance(actual, six.text_type)
+        self.assertIsInstance(actual, str)
         self.assertEqual(expected, actual)
 
     @mock.patch('random.randrange')
@@ -38,5 +37,5 @@ class TestGetRandomString(base.TestCase):
         randrange.return_value = ord('a')
         actual = utils.get_random_string()
         expected = '62' * 8  # hex for ord('b')
-        self.assertIsInstance(actual, six.text_type)
+        self.assertIsInstance(actual, str)
         self.assertEqual(expected, actual)

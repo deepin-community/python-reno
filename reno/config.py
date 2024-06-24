@@ -10,10 +10,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import collections
 import logging
 import os.path
 import textwrap
+from typing import Any
+from typing import List
+from typing import NamedTuple
+from typing import Union
 
 import yaml
 
@@ -22,13 +25,68 @@ from reno import defaults
 LOG = logging.getLogger(__name__)
 
 
-Opt = collections.namedtuple('Opt', 'name default help')
+class Opt(NamedTuple):
+    name: str
+    default: Any
+    help: str
+
+
+class Section(NamedTuple):
+    name: str
+    title: str
+    section_level: int  # 1 represents top-level; higher values are subsctions
+
+    @classmethod
+    def from_raw_yaml(
+        cls, val: List[List[Union[str, int]]]
+    ) -> List["Section"]:
+        result = []
+        for entry in val:
+            if len(entry) == 2:
+                section_level = 1
+            elif len(entry) == 3:
+                section_level = entry[2]
+                if (
+                    not isinstance(section_level, int)
+                    or section_level < 1
+                    or section_level > 3
+                ):
+                    raise ValueError(
+                        "The third argument for each entry in the `sections` "
+                        "option config must be an integer between 1 and 3."
+                        f"Invalid entry: {entry}"
+                    )
+            else:
+                raise ValueError(
+                    "Each entry in the `sections` option config must be a "
+                    f"list with 2 or 3 values. Invalid entry: {entry}"
+                )
+            result.append(
+                Section(
+                    name=entry[0], title=entry[1], section_level=section_level
+                )
+            )
+        return result
+
+    def header_underline(self) -> str:
+        symbol = {
+            1: "-",
+            2: "^",
+            3: "~",
+        }[self.section_level]
+        return symbol * len(self.title)
+
 
 _OPTIONS = [
     Opt('notesdir', defaults.NOTES_SUBDIR,
         textwrap.dedent("""\
         The notes subdirectory within the relnotesdir where the
         notes live.
+        """)),
+
+    Opt('allow_subdirectories', False,
+        textwrap.dedent("""\
+        Allow creating subdirectories under the notes subdirectory.
         """)),
 
     Opt('collapse_pre_releases', True,
@@ -52,6 +110,13 @@ _OPTIONS = [
         would be converted to ``liberty-eol``.
         """)),
 
+    Opt('default_branch', 'master',
+        textwrap.dedent("""\
+        The default git branch for the repository. This is the base branch that
+        is treated as the root for other branches. By default this is
+        ``master``.
+        """)),
+
     Opt('earliest_version', None,
         textwrap.dedent("""\
         The earliest version to be included. This is usually the
@@ -64,9 +129,15 @@ _OPTIONS = [
         The template used by reno new to create a note.
         """)),
 
+    Opt('add_release_date', False,
+        textwrap.dedent("""\
+        Should the report include release date (True) based on
+        the date of objects associated with the release tag.
+        """)),
+
     Opt('release_tag_re',
         textwrap.dedent('''\
-        ((?:v?[\d.ab]|rc)+)  # digits, a, b, and rc cover regular and
+        ((?:v?[\\d.ab]|rc)+)  # digits, a, b, and rc cover regular and
                            # pre-releases
         '''),
         textwrap.dedent("""\
@@ -77,7 +148,7 @@ _OPTIONS = [
 
     Opt('pre_release_tag_re',
         textwrap.dedent('''\
-        (?P<pre_release>\.v?\d+(?:[ab]|rc)+\d*)$
+        (?P<pre_release>\\.v?\\d+(?:[ab]|rc)+\\d*)$
         '''),
         textwrap.dedent("""\
         The regex pattern used to check if a valid release version tag
@@ -96,7 +167,7 @@ _OPTIONS = [
         "base" of a branch. Other branches are ignored.
         """)),
 
-    Opt('closed_branch_tag_re', '(.+)-eol',
+    Opt('closed_branch_tag_re', '(.+)-eo[lm]',
         textwrap.dedent("""\
         The pattern for names for tags that replace closed
         branches that are relevant when scanning history to
@@ -115,6 +186,23 @@ _OPTIONS = [
         to "stable/".
         """)),
 
+    Opt('branch_sort_re', 'stable/([0-9].*)',
+        textwrap.dedent("""\
+        By default branches are sorted alphabetically, except
+        for branches matching this pattern, those will be sorted
+        with branch_sort_prefix inserted in order to accomodate
+        the way OpenStack stable branches are named and sorted.
+        """)),
+
+    Opt('branch_sort_prefix', 'stable/zzz',
+        textwrap.dedent("""\
+        The prefix to add to names of branches matched
+        by branch_sort_re. This allows OpenStack branches
+        to be sorted according to the current release
+        naming scheme. Set to "stable/" in order to
+        restore plain alphabetic ordering.
+        """)),
+
     Opt('sections',
         [
             ['features', 'New Features'],
@@ -131,6 +219,20 @@ _OPTIONS = [
         release notes, in the order in which the final report will
         be generated. A prelude section will always be automatically
         inserted before the first element of this list.
+
+        You can optionally include a number from 1 to 3 at the
+        end of the list to mark the entry as a subsection. By default,
+        each section has the number 1, which represents a top-level
+        section. Use 2 and 3 for subsections and subsubsections.
+        For example, ``['features', 'New Features', 1]``,
+        ``['features_command_line', 'Command Line', 2]``,
+        and ``['features_command_line_ios', 'iOS', 3]``. The order of this
+        option matters; define subsections right after their ancestor
+        sections.
+
+        Warning: you should check that ``semver_major``, ``semver_minor``,
+        and ``semver_patch`` includes the relevant section names,
+        including subsections.
         """)),
 
     Opt('prelude_section_name', defaults.PRELUDE_SECTION_NAME,
@@ -174,16 +276,40 @@ _OPTIONS = [
         released version. If this option is unset, the development
         version number is used (for example, ``3.0.0-3``).
         """)),
+    Opt('encoding', None,
+        textwrap.dedent("""\
+        The character encoding to use when opening note files. If not
+        specified it will be dependent on the system running reno (whatever
+        'locale.getpreferredencoding()' returns. This takes in a string
+        name that will be passed to the encoding kwarg for open(), so any
+        codec or alias from stdlib's codec module is valid.
+        """)),
+
+    Opt('semver_major', ['upgrade'],
+        textwrap.dedent("""\
+        The sections that indicate release notes triggering major version
+        updates for the next release, from X.Y.Z to X+1.0.0.
+        """)),
+    Opt('semver_minor', ['features'],
+        textwrap.dedent("""\
+        The sections that indicate release notes triggering minor version
+        updates for the next release, from X.Y.Z to X.Y+1.0.
+        """)),
+    Opt('semver_patch', ['fixes'],
+        textwrap.dedent("""\
+        The sections that indicate release notes triggering patch version
+        updates for the next release, from X.Y.Z to X.Y.Z+1.
+        """)),
 ]
 
 
-class Config(object):
+class Config:
 
     _OPTS = {o.name: o for o in _OPTIONS}
 
     @classmethod
     def get_default(cls, opt):
-        "Return the default for an option."
+        """Return the default for an option."""
         try:
             return cls._OPTS[opt].default
         except KeyError:
@@ -228,7 +354,8 @@ class Config(object):
         except IOError as err:
             self._report_failure_config_file(filename, err)
         else:
-            self.override(**self._contents)
+            if self._contents:
+                self.override(**self._contents)
 
     def _report_missing_config_files(self, filenames):
         # NOTE(dhellmann): This is extracted so we can mock it for
@@ -258,12 +385,14 @@ class Config(object):
         # Replace prelude section name if it has been changed.
         self._rename_prelude_section(**kwds)
 
-        for n, v in kwds.items():
-            if n not in self._OPTS:
+        for name, val in kwds.items():
+            if name not in self._OPTS:
                 LOG.warning('ignoring unknown configuration value %r = %r',
-                            n, v)
+                            name, val)
             else:
-                setattr(self, n, v)
+                if name == "sections":
+                    val = Section.from_raw_yaml(val)
+                setattr(self, name, val)
 
     def override_from_parsed_args(self, parsed_args):
         """Set the values of the configuration options from parsed CLI args.

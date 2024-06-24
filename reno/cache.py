@@ -10,6 +10,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import collections
 import os
 import sys
 
@@ -20,39 +21,48 @@ from reno import scanner
 
 
 def build_cache_db(conf, versions_to_include):
-    s = scanner.Scanner(conf)
-    notes = s.get_notes_by_version()
+    with scanner.Scanner(conf) as s:
+        branches = [conf.branch]
+        if not conf.branch:  # if no branch requested, scan all
+            branches += s.get_series_branches()
 
-    # Default to including all versions returned by the scanner.
-    if not versions_to_include:
-        versions_to_include = list(notes.keys())
+        notes = collections.OrderedDict()
+        for branch in branches:
+            notes.update(s.get_notes_by_version(branch))
 
-    # Build a cache data structure including the file contents as well
-    # as the basic data returned by the scanner.
-    file_contents = {}
-    for version in versions_to_include:
-        for filename, sha in notes[version]:
-            body = s.get_file_at_commit(filename, sha)
-            # We want to save the contents of the file, which is YAML,
-            # inside another YAML file. That looks terribly ugly with
-            # all of the escapes needed to format it properly as
-            # embedded YAML, so parse the input and convert it to a
-            # data structure that can be serialized cleanly.
-            y = yaml.safe_load(body)
-            file_contents[filename] = y
+        # Default to including all versions returned by the scanner.
+        if not versions_to_include:
+            versions_to_include = list(notes.keys())
 
-    cache = {
-        'notes': [
-            {'version': k, 'files': v}
-            for k, v in notes.items()
-        ],
-        'file-contents': file_contents,
-    }
-    return cache
+        # Build a cache data structure including the file contents as well
+        # as the basic data returned by the scanner.
+        file_contents = {}
+        for version in versions_to_include:
+            for filename, sha in notes[version]:
+                body = s.get_file_at_commit(filename, sha)
+                # We want to save the contents of the file, which is YAML,
+                # inside another YAML file. That looks terribly ugly with
+                # all of the escapes needed to format it properly as
+                # embedded YAML, so parse the input and convert it to a
+                # data structure that can be serialized cleanly.
+                y = yaml.safe_load(body)
+                file_contents[filename] = y
+
+        cache = {
+            'notes': [
+                {'version': k, 'files': v}
+                for k, v in notes.items()
+            ],
+            'dates': [
+                {'version': k, 'date': v}
+                for k, v in s.get_version_dates().items()
+            ],
+            'file-contents': file_contents,
+        }
+        return cache
 
 
-def write_cache_db(conf, versions_to_include,
-                   outfilename=None):
+def write_cache_db(conf, versions_to_include, outfilename=None):
     """Create a cache database file for the release notes data.
 
     Build the cache database from scanning the project history and
@@ -67,17 +77,18 @@ def write_cache_db(conf, versions_to_include,
     Return the name of the file created, if any.
 
     """
+    encoding = conf.options['encoding']
     if outfilename == '-':
         stream = sys.stdout
         close_stream = False
     elif outfilename:
-        stream = open(outfilename, 'w')
+        stream = open(outfilename, 'w', encoding=encoding)
         close_stream = True
     else:
         outfilename = loader.get_cache_filename(conf)
         if not os.path.exists(os.path.dirname(outfilename)):
             os.makedirs(os.path.dirname(outfilename))
-        stream = open(outfilename, 'w')
+        stream = open(outfilename, 'w', encoding=encoding)
         close_stream = True
     try:
         cache = build_cache_db(

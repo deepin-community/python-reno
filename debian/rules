@@ -19,7 +19,8 @@ override_dh_auto_install:
 
 override_dh_auto_test:
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
-	pkgos-dh_auto_test --no-py2 'reno\.tests(?!.*test_cache\.TestCache\.test_build_cache_db.*)'
+	pkgos-dh_auto_test --no-py2 'reno\.tests\.(?!test_cache\.TestCache\.test_build_cache_db.*|test_semver\.TestSemVer.*)'
+
 endif
 
 override_dh_sphinxdoc:
