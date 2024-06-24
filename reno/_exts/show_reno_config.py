@@ -13,11 +13,12 @@
 from docutils import nodes
 from docutils.parsers import rst
 from docutils.statemachine import ViewList
-
+from sphinx.util import logging
 from sphinx.util.nodes import nested_parse_with_titles
 
 from reno import config
-import six
+
+LOG = logging.getLogger(__name__)
 
 
 def _multi_line_string(s, indent=''):
@@ -30,12 +31,12 @@ def _multi_line_string(s, indent=''):
 
 def _format_option_help(options):
     "Produce RST lines for the configuration options."
-    for opt in options:
+    for opt in sorted(options, key=lambda opt: opt.name):
         yield '``{}``'.format(opt.name)
         for l in _multi_line_string(opt.help, '  '):
             yield l
         yield ''
-        if isinstance(opt.default, six.string_types) and '\n' in opt.default:
+        if isinstance(opt.default, str) and '\n' in opt.default:
             # Multi-line string
             yield '  Defaults to'
             yield ''
@@ -55,13 +56,10 @@ class ShowConfigDirective(rst.Directive):
     has_content = True
 
     def run(self):
-        env = self.state.document.settings.env
-        app = env.app
-
         result = ViewList()
         source_name = '<' + __name__ + '>'
         for line in _format_option_help(config._OPTIONS):
-            app.info(line)
+            LOG.info(line)
             result.append(line, source_name)
 
         node = nodes.section()

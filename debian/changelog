@@ -1,3 +1,12 @@
+python-reno (4.1.0-1) unstable; urgency=medium
+
+  * New upstream release:
+    - fix syntax warning when installing (Closes: #1068867).
+  * Fixed (build-)depends for this release.
+  * Blacklist test_semver\.TestSemVer.* that needs a git repo of source code.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 18 Apr 2024 09:53:48 +0200
+
 python-reno (2.11.2-4) unstable; urgency=medium
 
   [ Ondřej Nový ]

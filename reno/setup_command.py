@@ -20,11 +20,12 @@ For more information, refer to the distutils and setuptools source:
 - https://github.com/pypa/setuptools/blob/v36.0.0/setuptools/command/sdist.py
 """
 
+import typing
+
 from distutils import cmd
 from distutils import errors
 from distutils import log
 
-import six
 
 from reno import cache
 from reno import config
@@ -103,12 +104,12 @@ class BuildReno(cmd.Command):
     # unicode, causing finalize_options to fail if invoked again. Workaround
     # for http://bugs.python.org/issue19570
     def _ensure_stringlike(self, option, what, default=None):
-        # type: (unicode, unicode, Any) -> Any
+        # type: (typing.unicode, typing.unicode, typing.Any) -> typing.Any
         val = getattr(self, option)
         if val is None:
             setattr(self, option, default)
             return default
-        elif not isinstance(val, six.string_types):
+        elif not isinstance(val, str):
             raise errors.DistutilsOptionError("'%s' must be a %s (got `%s`)"
                                               % (option, what, val))
         return val
@@ -126,13 +127,15 @@ class BuildReno(cmd.Command):
         )
         log.info('wrote cache file to %s', cache_filename)
 
-        ldr = loader.Loader(conf)
-        text = formatter.format_report(
-            ldr,
-            conf,
-            ldr.versions,
-            title=self.distribution.metadata.name,
-        )
+        with loader.Loader(conf) as ldr:
+            text = formatter.format_report(
+                ldr,
+                conf,
+                ldr.versions,
+                title=self.distribution.metadata.name,
+            )
+
         with open(self.output_file, 'w') as f:
             f.write(text)
+
         log.info('wrote release notes to %s', self.output_file)

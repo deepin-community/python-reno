@@ -10,8 +10,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from __future__ import print_function
-
 import os
 import subprocess
 
@@ -32,11 +30,11 @@ def _pick_note_file_name(notesdir, slug):
         )
 
 
-def _make_note_file(filename, template):
+def _make_note_file(filename, template, encoding=None):
     notesdir = os.path.dirname(filename)
     if not os.path.exists(notesdir):
         os.makedirs(notesdir)
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding=encoding) as f:
         f.write(template)
 
 
@@ -47,13 +45,13 @@ def _edit_file(filename):
     return True
 
 
-def _get_user_template(template_file):
+def _get_user_template(template_file, encoding=None):
     if not os.path.exists(template_file):
         raise ValueError(
             'The provided template file %s doesn\'t '
             'exist' % template_file,
         )
-    with open(template_file, 'r') as f:
+    with open(template_file, 'r', encoding=encoding) as f:
         return f.read()
 
 
@@ -66,12 +64,18 @@ def create_cmd(args, conf):
     # their local git tree, and so there should not be any concurrency
     # concern.
     slug = args.slug.replace(' ', '-')
+
+    if not conf.options['allow_subdirectories'] and os.sep in slug:
+        raise ValueError('Slug should not include the path separator (%s)'
+                         % os.sep)
+
     filename = _pick_note_file_name(conf.notespath, slug)
+    encoding = conf.options['encoding']
     if args.from_template:
-        template = _get_user_template(args.from_template)
+        template = _get_user_template(args.from_template, encoding=encoding)
     else:
         template = conf.template
-    _make_note_file(filename, template)
+    _make_note_file(filename, template, encoding=encoding)
     if args.edit and not _edit_file(filename):
         print('Was unable to edit the new note. EDITOR environment variable '
               'is missing!')

@@ -21,13 +21,13 @@ Build-Depends-Indep:
  python3-coverage,
  python3-dulwich,
  python3-hacking,
- python3-mock,
  python3-openstackdocstheme,
+ python3-packaging,
+ python3-stestr,
  python3-testscenarios,
  python3-testtools,
  python3-yaml,
  subunit,
- testrepository,
 Standards-Version: 4.4.1
 Vcs-Browser: https://salsa.debian.org/openstack-team/libs/python-reno
 Vcs-Git: https://salsa.debian.org/openstack-team/libs/python-reno.git
@@ -50,6 +50,7 @@ Architecture: all
 Depends:
  git,
  python3-dulwich,
+ python3-packaging,
  python3-pbr,
  python3-yaml,
  ${misc:Depends},

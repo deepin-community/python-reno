@@ -10,8 +10,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from __future__ import print_function
-
 import logging
 
 from reno import loader
@@ -23,16 +21,16 @@ def list_cmd(args, conf):
     "List notes files based on query arguments"
     LOG.debug('starting list')
     reporoot = conf.reporoot
-    ldr = loader.Loader(conf)
-    if args.version:
-        versions = args.version
-    else:
-        versions = ldr.versions
-    for version in versions:
-        notefiles = ldr[version]
-        print(version)
-        for n, sha in notefiles:
-            if n.startswith(reporoot):
-                n = n[len(reporoot):]
-            print('\t%s (%s)' % (n, sha))
+    with loader.Loader(conf) as ldr:
+        if args.version:
+            versions = args.version
+        else:
+            versions = ldr.versions
+        for version in versions:
+            notefiles = ldr[version]
+            print(version)
+            for n, sha in notefiles:
+                if n.startswith(reporoot):
+                    n = n[len(reporoot):]
+                print('\t%s (%s)' % (n, sha))
     return

@@ -1,4 +1,5 @@
 .. include:: ../../README.rst
+   :end-before: Project Meta-data
 
 EuroPython 2018 Presentation
 ============================
@@ -17,5 +18,14 @@ Contents
 
    user/index
    install/index
-   contributor/index
    releasenotes/index
+
+For Contributors
+================
+
+* If you are a new contributor to Reno please refer: :doc:`contributor/contributing`
+
+  .. toctree::
+     :hidden:
+
+     contributor/contributing

@@ -10,8 +10,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from __future__ import print_function
-
 
 def _indent_for_list(text, prefix='  '):
     """Indent some text to make it work as a list entry.
@@ -71,6 +69,10 @@ def format_report(loader, config, versions_to_include, title=None,
         report.append('=' * len(version_title))
         report.append('')
 
+        if config.add_release_date:
+            report.append('Release Date: ' + loader.get_version_date(version))
+            report.append('')
+
         # Add the preludes.
         notefiles = loader[version]
         prelude_name = config.prelude_section_name
@@ -92,19 +94,19 @@ def format_report(loader, config, versions_to_include, title=None,
             report.append('')
 
         # Add other sections.
-        for section_name, section_title in config.sections:
+        for section in config.sections:
             notes = [
                 (n, fn, sha)
                 for fn, sha in notefiles
-                if file_contents[fn].get(section_name)
-                for n in file_contents[fn].get(section_name, [])
+                if file_contents[fn].get(section.name)
+                for n in file_contents[fn].get(section.name, [])
             ]
             if notes:
                 report.append(_section_anchor(
-                    section_title, version_title, title, branch))
+                    section.title, version_title, title, branch))
                 report.append('')
-                report.append(section_title)
-                report.append('-' * len(section_title))
+                report.append(section.title)
+                report.append(section.header_underline())
                 report.append('')
                 for n, fn, sha in notes:
                     if show_source:

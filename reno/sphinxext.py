@@ -9,18 +9,17 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from __future__ import unicode_literals
-
 import os.path
 
 from docutils import nodes
 from docutils.parsers import rst
 from docutils.parsers.rst import directives
 from docutils import statemachine
+from dulwich import repo
 from sphinx.util import logging
 from sphinx.util.nodes import nested_parse_with_titles
 
-from dulwich import repo
+import reno
 from reno import config
 from reno import defaults
 from reno import formatter
@@ -49,16 +48,35 @@ class ReleaseNotesDirective(rst.Directive):
         'unreleased-version-title': directives.unchanged,
     }
 
-    def run(self):
-        title = ' '.join(self.content)
-        branch = self.options.get('branch')
-        reporoot_opt = self.options.get('reporoot', '.')
+    def _find_reporoot(self, reporoot_opt, relnotessubdir_opt):
+        """Find root directory of project."""
         reporoot = os.path.abspath(reporoot_opt)
         # When building on RTD.org the root directory may not be
         # the current directory, so look for it.
-        reporoot = repo.Repo.discover(reporoot).path
-        relnotessubdir = self.options.get('relnotessubdir',
-                                          defaults.RELEASE_NOTES_SUBDIR)
+        try:
+            return repo.Repo.discover(reporoot).path
+        except Exception:
+            pass
+
+        for root in ('.', '..', '../..'):
+            if os.path.exists(os.path.join(root, relnotessubdir_opt)):
+                return root
+
+        raise Exception(
+            'Could not discover root directory; tried: %s' % ', '.join([
+                os.path.abspath(root) for root in ('.', '..', '../..')
+            ])
+        )
+
+    def run(self):
+        title = ' '.join(self.content)
+        branch = self.options.get('branch')
+        relnotessubdir = self.options.get(
+            'relnotessubdir', defaults.RELEASE_NOTES_SUBDIR,
+        )
+        reporoot = self._find_reporoot(
+            self.options.get('reporoot', '.'), relnotessubdir,
+        )
         ignore_notes = [
             name.strip()
             for name in self.options.get('ignore-notes', '').split(',')
@@ -93,22 +111,23 @@ class ReleaseNotesDirective(rst.Directive):
                  os.path.join(conf.reporoot, notesdir),
                  branch or 'current branch'))
 
-        ldr = loader.Loader(conf)
-        if version_opt is not None:
-            versions = [
-                v.strip()
-                for v in version_opt.split(',')
-            ]
-        else:
-            versions = ldr.versions
-        LOG.info('got versions %s' % (versions,))
-        text = formatter.format_report(
-            ldr,
-            conf,
-            versions,
-            title=title,
-            branch=branch,
-        )
+        with loader.Loader(conf) as ldr:
+            if version_opt is not None:
+                versions = [
+                    v.strip()
+                    for v in version_opt.split(',')
+                ]
+            else:
+                versions = ldr.versions
+            LOG.info('got versions %s' % (versions,))
+            text = formatter.format_report(
+                ldr,
+                conf,
+                versions,
+                title=title,
+                branch=branch,
+            )
+
         source_name = '<%s %s>' % (__name__, branch or 'current branch')
         result = statemachine.ViewList()
         for line_num, line in enumerate(text.splitlines(), 1):
@@ -123,3 +142,8 @@ class ReleaseNotesDirective(rst.Directive):
 
 def setup(app):
     app.add_directive('release-notes', ReleaseNotesDirective)
+    metadata_dict = {
+        'version': reno.__version__,
+        'parallel_read_safe': True
+    }
+    return metadata_dict
